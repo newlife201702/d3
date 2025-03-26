@@ -63,6 +63,15 @@
         .arrow {
             fill: #999;
         }
+
+        /* 隐藏的文本元素用于测量文字宽度 */
+        .text-measure {
+            visibility: hidden;
+            position: absolute;
+            white-space: nowrap;
+            font-weight: bold;
+            font-family: Arial;
+        }
     </style>
 </head>
 <body>
@@ -70,10 +79,11 @@
         <button id="export-btn" class="control-btn">导出图片</button>
         <button id="fullscreen-btn" class="control-btn">全屏切换</button>
         <svg id="main-svg"></svg>
+        <!-- 用于测量文字宽度的隐藏元素 -->
+        <div id="text-measure" class="text-measure"></div>
     </div>
 
     <script src="https://d3js.org/d3.v7.min.js"></script>
-    <!-- 引入html-to-image库 -->
     <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
     <script>
         // 初始化变量
@@ -82,6 +92,8 @@
         let zoom;
         const minNodeSize = 20;
         const maxNodeSize = 60;
+        const textPadding = 20; // 文字与椭圆的水平间距
+        const textLineHeight = 1.2; // 文字行高系数
 
         // 按钮事件监听
         document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
@@ -170,12 +182,40 @@
                 );
         }
 
-        function calculateNodeSize(linksCount) {
-            const scale = d3.scaleLinear()
-                .domain([1, d3.max(window.nodes, d => d.links)])
+        // 测量文本宽度
+        function measureTextWidth(text, fontSize) {
+            const measureElement = document.getElementById('text-measure');
+            measureElement.style.fontSize = fontSize + 'px';
+            measureElement.textContent = text;
+            return measureElement.offsetWidth;
+        }
+
+        // 计算节点尺寸，考虑文字宽度
+        function calculateNodeSize(d) {
+            // 基础尺寸基于连接数
+            const baseScale = d3.scaleLinear()
+                .domain([1, d3.max(window.nodes, n => n.links)])
                 .range([minNodeSize, maxNodeSize])
                 .clamp(true);
-            return scale(linksCount);
+            
+            const baseSize = baseScale(d.links);
+            const fontSize = Math.min(14, baseSize/2);
+            
+            // 测量文字宽度
+            const textWidth = measureTextWidth(d.id, fontSize);
+            
+            // 计算需要的椭圆宽度（rx），考虑文字宽度和基础尺寸
+            const requiredWidth = Math.max(
+                baseSize, 
+                (textWidth + textPadding) / 2 // 除以2因为rx是椭圆宽度的一半
+            );
+            
+            // 返回计算后的尺寸
+            return {
+                rx: requiredWidth,
+                ry: baseSize * 0.6, // 保持椭圆高度比例
+                fontSize: fontSize
+            };
         }
 
         function renderElements() {
@@ -213,16 +253,21 @@
                     .on('end', dragEnded)
                 );
 
-            // 动态椭圆尺寸
-            node.append('ellipse')
-                .attr('rx', d => calculateNodeSize(d.links))
-                .attr('ry', d => calculateNodeSize(d.links) * 0.6);
+            // 动态椭圆尺寸（基于文字宽度自适应）
+            node.each(function(d) {
+                const size = calculateNodeSize(d);
+                d.size = size; // 保存尺寸信息供后续使用
+                
+                d3.select(this).append('ellipse')
+                    .attr('rx', size.rx)
+                    .attr('ry', size.ry);
+            });
 
-            // 节点文本
+            // 节点文本（完全居中）
             node.append('text')
                 .text(d => d.id)
-                .style('font-size', d => `${Math.min(14, calculateNodeSize(d.links)/2)}px`)
-                .attr('dy', '0.35em');
+                .attr('dy', '0.35em')
+                .style('font-size', d => d.size.fontSize + 'px');
 
             // 物理模拟更新
             simulation.on('tick', () => {
