@@ -9,6 +9,7 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+            font-family: Arial, sans-serif;
         }
 
         #container {
@@ -27,7 +28,6 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-family: Arial;
             font-size: 12px;
         }
 
@@ -36,7 +36,7 @@
         }
 
         #export-btn {
-            right: 120px;
+            right: 100px;
         }
 
         .node ellipse {
@@ -46,23 +46,29 @@
 
         .node text {
             font-weight: bold;
-            font-family: Arial;
             pointer-events: none;
             text-anchor: middle;
+            dominant-baseline: middle;
         }
 
         .link {
             stroke: #999;
-            stroke-opacity: 0.6;
+            stroke-opacity: 0.8;
+            stroke-width: 1.5px;
         }
 
         .arrow {
             fill: #999;
-            stroke-opacity: 0.6;
         }
 
         .target-node ellipse {
             fill: white;
+            stroke: #333;
+        }
+
+        .source-node ellipse {
+            fill: #4CAF50;
+            stroke: #2E7D32;
         }
     </style>
 </head>
@@ -74,6 +80,7 @@
     </div>
 
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvg/dist/browser/canvg.min.js"></script>
     <script>
         // 初始化变量
         let width, height;
@@ -82,9 +89,9 @@
         const minNodeSize = 20;
         const maxNodeSize = 60;
 
-        // 全屏控制
+        // 按钮事件监听
         document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
-        document.getElementById('export-btn').addEventListener('click', exportImage);
+        document.getElementById('export-btn').addEventListener('click', exportAsPNG);
 
         // 初始化可视化
         initVisualization();
@@ -121,7 +128,7 @@
                 .enter().append('marker')
                 .attr('id', d => d)
                 .attr('viewBox', '0 -5 10 10')
-                .attr('refX', 15)
+                .attr('refX', 25)  // 调整箭头位置
                 .attr('refY', 0)
                 .attr('markerWidth', 6)
                 .attr('markerHeight', 6)
@@ -134,9 +141,19 @@
         function processData(data) {
             // 节点处理
             const nodes = {};
+            const targetNodes = new Set(data.map(d => d.target));
+            
             data.forEach(d => {
-                nodes[d.source] = nodes[d.source] || { id: d.source, links: 0, isTarget: false };
-                nodes[d.target] = nodes[d.target] || { id: d.target, links: 0, isTarget: true };
+                nodes[d.source] = nodes[d.source] || { 
+                    id: d.source, 
+                    links: 0, 
+                    isTarget: targetNodes.has(d.source) 
+                };
+                nodes[d.target] = nodes[d.target] || { 
+                    id: d.target, 
+                    links: 0, 
+                    isTarget: true 
+                };
                 nodes[d.source].links++;
                 nodes[d.target].links++;
             });
@@ -152,12 +169,14 @@
             simulation = d3.forceSimulation(window.nodes)
                 .force('link', d3.forceLink(window.links)
                     .id(d => d.id)
-                    .distance(d => Math.min(100, width * 0.1)))
+                    .distance(d => Math.min(100, width * 0.1))
+                )
                 .force('charge', d3.forceManyBody()
                     .strength(d => -Math.min(1200, height * 2)))
                 .force('center', d3.forceCenter(width/2, height/2))
                 .force('collision', d3.forceCollide()
-                    .radius(d => calculateNodeSize(d.links) + 5));
+                    .radius(d => calculateNodeSize(d.links) + 5)
+                );
         }
 
         function calculateNodeSize(linksCount) {
@@ -175,29 +194,28 @@
             zoom = d3.zoom()
                 .scaleExtent([0.1, 8])
                 .on('zoom', (event) => {
-                    svg.selectAll('.nodes-container').attr('transform', event.transform);
-                    svg.selectAll('.links-container').attr('transform', event.transform);
+                    svg.selectAll('g.zoomable').attr('transform', event.transform);
                 });
 
             svg.call(zoom);
 
             // 添加容器用于缩放
-            const linksContainer = svg.append('g').attr('class', 'links-container');
-            const nodesContainer = svg.append('g').attr('class', 'nodes-container');
+            const zoomableGroup = svg.append('g').attr('class', 'zoomable');
 
             // 绘制连线
-            const link = linksContainer.selectAll('.link')
+            const link = zoomableGroup.append('g').attr('class', 'links')
+                .selectAll('.link')
                 .data(window.links)
                 .join('line')
                 .attr('class', 'link')
-                .attr('stroke-width', 1.2)
                 .attr('marker-end', 'url(#arrow)');
 
             // 创建节点组
-            const node = nodesContainer.selectAll('.node')
+            const node = zoomableGroup.append('g').attr('class', 'nodes')
+                .selectAll('.node')
                 .data(window.nodes)
                 .join('g')
-                .attr('class', d => `node ${d.isTarget ? 'target-node' : ''}`)
+                .attr('class', d => `node ${d.isTarget ? 'target-node' : 'source-node'}`)
                 .call(d3.drag()
                     .on('start', dragStarted)
                     .on('drag', dragged)
@@ -207,14 +225,11 @@
             // 动态椭圆尺寸
             node.append('ellipse')
                 .attr('rx', d => calculateNodeSize(d.links))
-                .attr('ry', d => calculateNodeSize(d.links) * 0.6)
-                .attr('fill', '#4CAF50')
-                .attr('stroke', '#2E7D32');
+                .attr('ry', d => calculateNodeSize(d.links) * 0.6);
 
             // 节点文本
             node.append('text')
                 .text(d => d.id)
-                .attr('dy', '0.3em')
                 .style('font-size', d => `${Math.min(14, calculateNodeSize(d.links)/2)}px`);
 
             // 物理模拟更新
@@ -230,15 +245,28 @@
 
             // 调整初始视图以显示所有节点
             setTimeout(() => {
-                const bounds = nodesContainer.node().getBBox();
-                const centerX = bounds.x + bounds.width / 2;
-                const centerY = bounds.y + bounds.height / 2;
-                const scale = Math.min(0.8 * width / bounds.width, 0.8 * height / bounds.height, 1);
+                const nodes = node.nodes();
+                const xCoords = nodes.map(n => +n.getAttribute('transform').split('(')[1].split(',')[0]);
+                const yCoords = nodes.map(n => +n.getAttribute('transform').split(',')[1].split(')')[0]);
+                
+                const minX = Math.min(...xCoords);
+                const maxX = Math.max(...xCoords);
+                const minY = Math.min(...yCoords);
+                const maxY = Math.max(...yCoords);
+                
+                const graphWidth = maxX - minX;
+                const graphHeight = maxY - minY;
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+                
+                const scale = 0.85 / Math.max(graphWidth / width, graphHeight / height);
+                const translateX = width / 2 - scale * centerX;
+                const translateY = height / 2 - scale * centerY;
                 
                 svg.transition()
                     .duration(750)
                     .call(zoom.transform, d3.zoomIdentity
-                        .translate(width / 2 - centerX * scale, height / 2 - centerY * scale)
+                        .translate(translateX, translateY)
                         .scale(scale));
             }, 1000);
         }
@@ -266,29 +294,33 @@
             }
         }
 
-        function exportImage() {
+        function exportAsPNG() {
             const svg = document.getElementById('main-svg');
-            const serializer = new XMLSerializer();
-            const svgStr = serializer.serializeToString(svg);
-            
+            const svgData = new XMLSerializer().serializeToString(svg);
             const canvas = document.createElement('canvas');
-            canvas.width = svg.width.baseVal.value;
-            canvas.height = svg.height.baseVal.value;
+            
+            // 设置Canvas尺寸为SVG的实际尺寸
+            const svgSize = svg.getBoundingClientRect();
+            canvas.width = svgSize.width * 2;  // 2倍尺寸提高质量
+            canvas.height = svgSize.height * 2;
             
             const ctx = canvas.getContext('2d');
-            const img = new Image();
+            ctx.scale(2, 2);  // 缩放以匹配尺寸
             
-            img.onload = function() {
-                ctx.drawImage(img, 0, 0);
-                const dataURL = canvas.toDataURL('image/png');
-                
-                const link = document.createElement('a');
-                link.download = 'network-graph.png';
-                link.href = dataURL;
-                link.click();
-            };
-            
-            img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
+            // 使用canvg库渲染SVG到Canvas
+            canvg(canvas, svgData, {
+                scaleWidth: canvas.width,
+                scaleHeight: canvas.height,
+                ignoreDimensions: true,
+                ignoreClear: true,
+                renderCallback: function() {
+                    // 创建下载链接
+                    const link = document.createElement('a');
+                    link.download = 'ai-knowledge-graph.png';
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                }
+            });
         }
 
         // 拖拽交互
