@@ -42,6 +42,7 @@
         .node ellipse {
             stroke: #333;
             stroke-width: 1.5px;
+            fill: white; /* 所有节点背景设为白色 */
         }
 
         .node text {
@@ -49,6 +50,7 @@
             pointer-events: none;
             text-anchor: middle;
             dominant-baseline: middle;
+            fill: #333; /* 文字颜色设为深色 */
         }
 
         .link {
@@ -59,16 +61,6 @@
 
         .arrow {
             fill: #999;
-        }
-
-        .target-node ellipse {
-            fill: white;
-            stroke: #333;
-        }
-
-        .source-node ellipse {
-            fill: #4CAF50;
-            stroke: #2E7D32;
         }
     </style>
 </head>
@@ -91,7 +83,7 @@
 
         // 按钮事件监听
         document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
-        document.getElementById('export-btn').addEventListener('click', exportAsPNG);
+        document.getElementById('export-btn').addEventListener('click', exportHighQualityPNG);
 
         // 初始化可视化
         initVisualization();
@@ -128,7 +120,7 @@
                 .enter().append('marker')
                 .attr('id', d => d)
                 .attr('viewBox', '0 -5 10 10')
-                .attr('refX', 25)  // 调整箭头位置
+                .attr('refX', 25)
                 .attr('refY', 0)
                 .attr('markerWidth', 6)
                 .attr('markerHeight', 6)
@@ -141,18 +133,14 @@
         function processData(data) {
             // 节点处理
             const nodes = {};
-            const targetNodes = new Set(data.map(d => d.target));
-            
             data.forEach(d => {
                 nodes[d.source] = nodes[d.source] || { 
                     id: d.source, 
-                    links: 0, 
-                    isTarget: targetNodes.has(d.source) 
+                    links: 0
                 };
                 nodes[d.target] = nodes[d.target] || { 
                     id: d.target, 
-                    links: 0, 
-                    isTarget: true 
+                    links: 0
                 };
                 nodes[d.source].links++;
                 nodes[d.target].links++;
@@ -215,7 +203,7 @@
                 .selectAll('.node')
                 .data(window.nodes)
                 .join('g')
-                .attr('class', d => `node ${d.isTarget ? 'target-node' : 'source-node'}`)
+                .attr('class', 'node')
                 .call(d3.drag()
                     .on('start', dragStarted)
                     .on('drag', dragged)
@@ -227,10 +215,11 @@
                 .attr('rx', d => calculateNodeSize(d.links))
                 .attr('ry', d => calculateNodeSize(d.links) * 0.6);
 
-            // 节点文本
+            // 节点文本 - 确保文字居中
             node.append('text')
                 .text(d => d.id)
-                .style('font-size', d => `${Math.min(14, calculateNodeSize(d.links)/2)}px`);
+                .style('font-size', d => `${Math.min(14, calculateNodeSize(d.links)/2)}px`)
+                .attr('dy', '0.35em');
 
             // 物理模拟更新
             simulation.on('tick', () => {
@@ -246,8 +235,14 @@
             // 调整初始视图以显示所有节点
             setTimeout(() => {
                 const nodes = node.nodes();
-                const xCoords = nodes.map(n => +n.getAttribute('transform').split('(')[1].split(',')[0]);
-                const yCoords = nodes.map(n => +n.getAttribute('transform').split(',')[1].split(')')[0]);
+                const xCoords = nodes.map(n => {
+                    const transform = n.getAttribute('transform');
+                    return transform ? +transform.split('(')[1].split(',')[0] : 0;
+                });
+                const yCoords = nodes.map(n => {
+                    const transform = n.getAttribute('transform');
+                    return transform ? +transform.split(',')[1].split(')')[0] : 0;
+                });
                 
                 const minX = Math.min(...xCoords);
                 const maxX = Math.max(...xCoords);
@@ -294,29 +289,43 @@
             }
         }
 
-        function exportAsPNG() {
+        function exportHighQualityPNG() {
             const svg = document.getElementById('main-svg');
             const svgData = new XMLSerializer().serializeToString(svg);
-            const canvas = document.createElement('canvas');
             
-            // 设置Canvas尺寸为SVG的实际尺寸
-            const svgSize = svg.getBoundingClientRect();
-            canvas.width = svgSize.width * 2;  // 2倍尺寸提高质量
-            canvas.height = svgSize.height * 2;
+            // 创建临时SVG元素用于导出
+            const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            tempSvg.innerHTML = svgData;
+            
+            // 获取实际内容尺寸
+            const bbox = tempSvg.getBBox();
+            const contentWidth = bbox.width + 40; // 添加边距
+            const contentHeight = bbox.height + 40;
+            
+            // 设置临时SVG尺寸
+            tempSvg.setAttribute('width', contentWidth);
+            tempSvg.setAttribute('height', contentHeight);
+            tempSvg.setAttribute('viewBox', `${bbox.x-20} ${bbox.y-20} ${contentWidth} ${contentHeight}`);
+            
+            // 创建Canvas
+            const canvas = document.createElement('canvas');
+            const scale = 2; // 提高导出质量
+            canvas.width = contentWidth * scale;
+            canvas.height = contentHeight * scale;
             
             const ctx = canvas.getContext('2d');
-            ctx.scale(2, 2);  // 缩放以匹配尺寸
+            ctx.scale(scale, scale);
             
-            // 使用canvg库渲染SVG到Canvas
-            canvg(canvas, svgData, {
-                scaleWidth: canvas.width,
-                scaleHeight: canvas.height,
+            // 使用canvg渲染
+            canvg(canvas, new XMLSerializer().serializeToString(tempSvg), {
                 ignoreDimensions: true,
                 ignoreClear: true,
+                scaleWidth: contentWidth,
+                scaleHeight: contentHeight,
                 renderCallback: function() {
                     // 创建下载链接
                     const link = document.createElement('a');
-                    link.download = 'ai-knowledge-graph.png';
+                    link.download = 'knowledge-graph-export.png';
                     link.href = canvas.toDataURL('image/png');
                     link.click();
                 }
