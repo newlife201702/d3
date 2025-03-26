@@ -36,13 +36,13 @@
         }
 
         #export-btn {
-            right: 100px;
+            right: 120px;
         }
 
         .node ellipse {
             stroke: #333;
             stroke-width: 1.5px;
-            fill: white; /* 所有节点背景设为白色 */
+            fill: white;
         }
 
         .node text {
@@ -50,7 +50,7 @@
             pointer-events: none;
             text-anchor: middle;
             dominant-baseline: middle;
-            fill: #333; /* 文字颜色设为深色 */
+            fill: #333;
         }
 
         .link {
@@ -72,7 +72,8 @@
     </div>
 
     <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/canvg/dist/browser/canvg.min.js"></script>
+    <!-- 引入html-to-image库 -->
+    <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
     <script>
         // 初始化变量
         let width, height;
@@ -83,7 +84,7 @@
 
         // 按钮事件监听
         document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
-        document.getElementById('export-btn').addEventListener('click', exportHighQualityPNG);
+        document.getElementById('export-btn').addEventListener('click', exportAsImage);
 
         // 初始化可视化
         initVisualization();
@@ -160,7 +161,8 @@
                     .distance(d => Math.min(100, width * 0.1))
                 )
                 .force('charge', d3.forceManyBody()
-                    .strength(d => -Math.min(1200, height * 2)))
+                    .strength(d => -Math.min(1200, height * 2))
+                )
                 .force('center', d3.forceCenter(width/2, height/2))
                 .force('collision', d3.forceCollide()
                     .radius(d => calculateNodeSize(d.links) + 5)
@@ -215,7 +217,7 @@
                 .attr('rx', d => calculateNodeSize(d.links))
                 .attr('ry', d => calculateNodeSize(d.links) * 0.6);
 
-            // 节点文本 - 确保文字居中
+            // 节点文本
             node.append('text')
                 .text(d => d.id)
                 .style('font-size', d => `${Math.min(14, calculateNodeSize(d.links)/2)}px`)
@@ -289,47 +291,28 @@
             }
         }
 
-        function exportHighQualityPNG() {
-            const svg = document.getElementById('main-svg');
-            const svgData = new XMLSerializer().serializeToString(svg);
+        async function exportAsImage() {
+            // 获取SVG元素
+            const svgElement = document.getElementById('main-svg');
             
-            // 创建临时SVG元素用于导出
-            const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            tempSvg.innerHTML = svgData;
-            
-            // 获取实际内容尺寸
-            const bbox = tempSvg.getBBox();
-            const contentWidth = bbox.width + 40; // 添加边距
-            const contentHeight = bbox.height + 40;
-            
-            // 设置临时SVG尺寸
-            tempSvg.setAttribute('width', contentWidth);
-            tempSvg.setAttribute('height', contentHeight);
-            tempSvg.setAttribute('viewBox', `${bbox.x-20} ${bbox.y-20} ${contentWidth} ${contentHeight}`);
-            
-            // 创建Canvas
-            const canvas = document.createElement('canvas');
-            const scale = 2; // 提高导出质量
-            canvas.width = contentWidth * scale;
-            canvas.height = contentHeight * scale;
-            
-            const ctx = canvas.getContext('2d');
-            ctx.scale(scale, scale);
-            
-            // 使用canvg渲染
-            canvg(canvas, new XMLSerializer().serializeToString(tempSvg), {
-                ignoreDimensions: true,
-                ignoreClear: true,
-                scaleWidth: contentWidth,
-                scaleHeight: contentHeight,
-                renderCallback: function() {
-                    // 创建下载链接
-                    const link = document.createElement('a');
-                    link.download = 'knowledge-graph-export.png';
-                    link.href = canvas.toDataURL('image/png');
-                    link.click();
-                }
-            });
+            try {
+                // 使用html-to-image库导出PNG
+                const dataUrl = await htmlToImage.toPng(svgElement, {
+                    quality: 1, // 最高质量
+                    backgroundColor: 'white', // 白色背景
+                    pixelRatio: 2 // 提高分辨率
+                });
+                
+                // 创建下载链接
+                const link = document.createElement('a');
+                link.download = 'knowledge-graph-export.png';
+                link.href = dataUrl;
+                link.click();
+                
+            } catch (error) {
+                console.error('导出图片时出错:', error);
+                alert('导出图片失败，请重试或检查控制台错误信息');
+            }
         }
 
         // 拖拽交互
