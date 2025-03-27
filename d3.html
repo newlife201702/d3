@@ -52,6 +52,7 @@
             text-anchor: middle;
             dominant-baseline: middle;
             fill: #333;
+            alignment-baseline: middle;
         }
 
         .link {
@@ -93,7 +94,11 @@
         const minNodeSize = 20;
         const maxNodeSize = 60;
         const textPadding = 20; // 文字与椭圆的水平间距
-        const textLineHeight = 1.2; // 文字行高系数
+        
+        // 紧凑布局参数
+        const baseLinkDistance = 30; // 基础连接距离
+        const chargeStrength = -400; // 电荷力强度
+        const collisionPadding = 1;  // 碰撞检测间距
 
         // 按钮事件监听
         document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
@@ -171,14 +176,15 @@
             simulation = d3.forceSimulation(window.nodes)
                 .force('link', d3.forceLink(window.links)
                     .id(d => d.id)
-                    .distance(d => Math.min(100, width * 0.1))
+                    .distance(baseLinkDistance) // 使用更小的固定连接距离
                 )
                 .force('charge', d3.forceManyBody()
-                    .strength(d => -Math.min(1200, height * 2))
+                    .strength(chargeStrength) // 更强的电荷力使节点更紧凑
                 )
                 .force('center', d3.forceCenter(width/2, height/2))
                 .force('collision', d3.forceCollide()
-                    .radius(d => calculateNodeSize(d.links) + 5)
+                    .radius(d => calculateNodeSize(d).rx + collisionPadding) // 更小的碰撞间距
+                    .strength(0.7) // 降低碰撞强度
                 );
         }
 
@@ -266,8 +272,9 @@
             // 节点文本（完全居中）
             node.append('text')
                 .text(d => d.id)
-                .attr('dy', '0.35em')
-                .style('font-size', d => d.size.fontSize + 'px');
+                .style('font-size', d => d.size.fontSize + 'px')
+                .attr('dy', '0')
+                .attr('alignment-baseline', 'middle');
 
             // 物理模拟更新
             simulation.on('tick', () => {
@@ -323,8 +330,8 @@
 
             simulation
                 .force('center', d3.forceCenter(width/2, height/2))
-                .force('link').distance(d => Math.min(100, width * 0.1))
-                .force('charge').strength(d => -Math.min(1200, height * 2))
+                .force('link').distance(baseLinkDistance)
+                .force('charge').strength(chargeStrength)
                 .alphaTarget(0.3)
                 .restart();
         }
